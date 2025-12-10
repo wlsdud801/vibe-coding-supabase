@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { ArrowLeft } from "lucide-react";
+import { useSubmitMagazine } from "./hooks/index.submit.hook";
 
 interface FormData {
   category: string;
@@ -19,18 +20,18 @@ const CATEGORIES = [
   "모바일",
   "데이터사이언스",
   "블록체인",
-  "DevOps"
+  "DevOps",
 ];
 
-function CustomDropdown({ 
-  value, 
-  onChange, 
-  options, 
-  placeholder 
-}: { 
-  value: string; 
-  onChange: (value: string) => void; 
-  options: string[]; 
+function CustomDropdown({
+  value,
+  onChange,
+  options,
+  placeholder,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: string[];
   placeholder: string;
 }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -38,14 +39,17 @@ function CustomDropdown({
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
         setIsOpen(false);
       }
     }
 
-    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener("mousedown", handleClickOutside);
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
 
@@ -56,30 +60,32 @@ function CustomDropdown({
         className="custom-dropdown-button"
         onClick={() => setIsOpen(!isOpen)}
       >
-        <span className={value ? '' : 'custom-dropdown-placeholder'}>
+        <span className={value ? "" : "custom-dropdown-placeholder"}>
           {value || placeholder}
         </span>
-        <svg 
-          className={`custom-dropdown-icon ${isOpen ? 'open' : ''}`}
-          width="20" 
-          height="20" 
-          viewBox="0 0 24 24" 
-          fill="none" 
-          stroke="currentColor" 
-          strokeWidth="2" 
-          strokeLinecap="round" 
+        <svg
+          className={`custom-dropdown-icon ${isOpen ? "open" : ""}`}
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
           strokeLinejoin="round"
         >
           <polyline points="6 9 12 15 18 9"></polyline>
         </svg>
       </button>
-      
+
       {isOpen && (
         <div className="custom-dropdown-menu">
           {options.map((option) => (
             <div
               key={option}
-              className={`custom-dropdown-item ${value === option ? 'selected' : ''}`}
+              className={`custom-dropdown-item ${
+                value === option ? "selected" : ""
+              }`}
               onClick={() => {
                 onChange(option);
                 setIsOpen(false);
@@ -87,14 +93,14 @@ function CustomDropdown({
             >
               {option}
               {value === option && (
-                <svg 
-                  width="16" 
-                  height="16" 
-                  viewBox="0 0 24 24" 
-                  fill="none" 
-                  stroke="currentColor" 
-                  strokeWidth="2" 
-                  strokeLinecap="round" 
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
                   strokeLinejoin="round"
                 >
                   <polyline points="20 6 9 17 4 12"></polyline>
@@ -110,14 +116,17 @@ function CustomDropdown({
 
 export default function Page() {
   const onNavigateToList = () => {
-    window.location.href = '/magazines';
+    window.location.href = "/magazines";
   };
+
+  const { submitMagazine, isLoading, error } = useSubmitMagazine();
+
   const [formData, setFormData] = useState<FormData>({
     category: "",
     title: "",
     summary: "",
     content: "",
-    tags: ""
+    tags: "",
   });
 
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -125,12 +134,14 @@ export default function Page() {
   const [isDragging, setIsDragging] = useState(false);
 
   const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >
   ) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      [name]: value
+      [name]: value,
     }));
   };
 
@@ -138,7 +149,7 @@ export default function Page() {
     const file = e.target.files?.[0];
     if (file) {
       setImageFile(file);
-      
+
       // 미리보기 URL 생성
       const reader = new FileReader();
       reader.onloadend = () => {
@@ -161,11 +172,11 @@ export default function Page() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    
+
     const file = e.dataTransfer.files?.[0];
-    if (file && file.type.startsWith('image/')) {
+    if (file && file.type.startsWith("image/")) {
       setImageFile(file);
-      
+
       const reader = new FileReader();
       reader.onloadend = () => {
         setImagePreview(reader.result as string);
@@ -174,36 +185,48 @@ export default function Page() {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
+    // 로딩 중이면 중복 제출 방지
+    if (isLoading) return;
+
     const tagsArray = formData.tags
       .split(" ")
-      .map(tag => tag.trim())
-      .filter(tag => tag.length > 0);
+      .map((tag) => tag.trim())
+      .filter((tag) => tag.length > 0);
 
-    const newArticle = {
+    // Supabase에 데이터 등록
+    const result = await submitMagazine({
       imageFile: imageFile,
       category: formData.category,
       title: formData.title,
-      summary: formData.summary,
+      description: formData.summary,
       content: formData.content,
-      tags: tagsArray
-    };
-
-    console.log("새 아티클:", newArticle);
-    alert("아티클이 등록되었습니다!");
-    
-    // 폼 초기화
-    setFormData({
-      category: "",
-      title: "",
-      summary: "",
-      content: "",
-      tags: ""
+      tags: tagsArray.length > 0 ? tagsArray : null,
     });
-    setImageFile(null);
-    setImagePreview("");
+
+    if (result.success && result.id) {
+      // 등록 성공
+      alert("등록에 성공하였습니다.");
+
+      // 폼 초기화
+      setFormData({
+        category: "",
+        title: "",
+        summary: "",
+        content: "",
+        tags: "",
+      });
+      setImageFile(null);
+      setImagePreview("");
+
+      // 상세 페이지로 이동
+      window.location.href = `/magazines/${result.id}`;
+    } else {
+      // 등록 실패
+      alert(`등록에 실패했습니다: ${result.error || "알 수 없는 오류"}`);
+    }
   };
 
   return (
@@ -215,18 +238,20 @@ export default function Page() {
 
       <div className="magazine-form-header">
         <h1>새 아티클 등록</h1>
-        <p className="magazine-form-subtitle">IT 매거진에 새로운 기술 아티클을 등록합니다</p>
+        <p className="magazine-form-subtitle">
+          IT 매거진에 새로운 기술 아티클을 등록합니다
+        </p>
       </div>
 
       <form className="magazine-form" onSubmit={handleSubmit}>
         <div className="magazine-form-group">
-          <label className="magazine-form-label">
-            이미지 파일
-          </label>
-          
+          <label className="magazine-form-label">이미지 파일</label>
+
           {!imagePreview ? (
-            <div 
-              className={`magazine-file-upload-zone ${isDragging ? 'dragging' : ''}`}
+            <div
+              className={`magazine-file-upload-zone ${
+                isDragging ? "dragging" : ""
+              }`}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
@@ -241,31 +266,66 @@ export default function Page() {
               />
               <label htmlFor="imageFile" className="magazine-file-upload-label">
                 <div className="magazine-file-upload-icon">
-                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                  <svg
+                    width="48"
+                    height="48"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <rect
+                      x="3"
+                      y="3"
+                      width="18"
+                      height="18"
+                      rx="2"
+                      ry="2"
+                    ></rect>
                     <circle cx="8.5" cy="8.5" r="1.5"></circle>
                     <polyline points="21 15 16 10 5 21"></polyline>
                   </svg>
                 </div>
                 <div className="magazine-file-upload-text">
-                  <span className="magazine-file-upload-primary">클릭하여 이미지 선택</span>
-                  <span className="magazine-file-upload-secondary">또는 드래그 앤 드롭</span>
+                  <span className="magazine-file-upload-primary">
+                    클릭하여 이미지 선택
+                  </span>
+                  <span className="magazine-file-upload-secondary">
+                    또는 드래그 앤 드롭
+                  </span>
                 </div>
-                <p className="magazine-file-upload-hint">JPG, PNG, GIF (최대 10MB)</p>
+                <p className="magazine-file-upload-hint">
+                  JPG, PNG, GIF (최대 10MB)
+                </p>
               </label>
             </div>
           ) : (
             <div className="magazine-form-preview">
-              <img src={imagePreview} alt="미리보기" className="magazine-form-preview-image" />
-              <button 
-                type="button" 
+              <img
+                src={imagePreview}
+                alt="미리보기"
+                className="magazine-form-preview-image"
+              />
+              <button
+                type="button"
                 className="magazine-preview-remove"
                 onClick={() => {
-                  setImagePreview('');
+                  setImagePreview("");
                   setImageFile(null);
                 }}
               >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <line x1="18" y1="6" x2="6" y2="18"></line>
                   <line x1="6" y1="6" x2="18" y2="18"></line>
                 </svg>
@@ -281,7 +341,9 @@ export default function Page() {
           </label>
           <CustomDropdown
             value={formData.category}
-            onChange={(value) => setFormData(prev => ({ ...prev, category: value }))}
+            onChange={(value) =>
+              setFormData((prev) => ({ ...prev, category: value }))
+            }
             options={CATEGORIES}
             placeholder="카테고리를 선택해주세요"
           />
@@ -348,12 +410,34 @@ export default function Page() {
             value={formData.tags}
             onChange={handleChange}
           />
-          <p className="magazine-form-hint">공백으로 구분하여 입력해주세요 (예: #React #Node.js #WebDev)</p>
+          <p className="magazine-form-hint">
+            공백으로 구분하여 입력해주세요 (예: #React #Node.js #WebDev)
+          </p>
         </div>
 
-        <button type="submit" className="magazine-form-submit">
-          아티클 등록하기
+        <button
+          type="submit"
+          className="magazine-form-submit"
+          disabled={isLoading}
+        >
+          {isLoading ? "등록 중..." : "아티클 등록하기"}
         </button>
+
+        {error && (
+          <div
+            className="magazine-form-error"
+            style={{
+              marginTop: "1rem",
+              padding: "1rem",
+              backgroundColor: "#fee",
+              border: "1px solid #fcc",
+              borderRadius: "0.5rem",
+              color: "#c00",
+            }}
+          >
+            ❌ 오류: {error}
+          </div>
+        )}
       </form>
     </div>
   );

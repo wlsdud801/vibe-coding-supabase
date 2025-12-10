@@ -13,6 +13,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <script src="https://cdn.portone.io/v2/browser-sdk.js"></script>
+      </head>
       <body>
         {children}
       </body>
