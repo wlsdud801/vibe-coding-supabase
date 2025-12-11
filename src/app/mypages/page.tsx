@@ -23,7 +23,7 @@ const mockUserData: UserProfile = {
   transactionKey: "payment_1234567890_abc123", // Mock transaction key
 };
 
-export function GlossaryMagazinesMypage() {
+function GlossaryMagazinesMypage() {
   const router = useRouter();
   const [user, setUser] = useState<UserProfile>(mockUserData);
   const { isLoading, handleCancelSubscription: cancelSubscription } =

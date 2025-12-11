@@ -35,7 +35,7 @@ interface ChecklistItem {
   step: string;
   status: 'success' | 'failed' | 'skipped';
   message: string;
-  data?: any;
+  data?: Record<string, unknown>;
 }
 
 // 유틸리티 함수: 한국 시간(KST)을 UTC로 변환
@@ -95,6 +95,12 @@ async function getPaymentInfo(paymentId: string): Promise<PortOnePayment> {
   return await response.json();
 }
 
+interface SchedulePaymentResponse {
+  id: string;
+  paymentId: string;
+  timeToPay: string;
+}
+
 // 포트원 API: 결제 예약
 async function schedulePayment(
   scheduleId: string,
@@ -103,7 +109,7 @@ async function schedulePayment(
   customerId: string,
   amount: number,
   timeToPay: Date
-): Promise<any> {
+): Promise<SchedulePaymentResponse> {
   const response = await fetch(`${PORTONE_API_URL}/payments/${scheduleId}/schedule`, {
     method: 'POST',
     headers: {
@@ -134,8 +140,19 @@ async function schedulePayment(
   return await response.json();
 }
 
+interface PaymentScheduleItem {
+  id: string;
+  paymentId: string;
+  billingKey: string;
+  timeToPay: string;
+}
+
+interface PaymentSchedulesResponse {
+  items: PaymentScheduleItem[];
+}
+
 // 포트원 API: 예약된 결제정보 조회 (GET with body using axios)
-async function getPaymentSchedules(billingKey: string, from: Date, until: Date): Promise<any> {
+async function getPaymentSchedules(billingKey: string, from: Date, until: Date): Promise<PaymentSchedulesResponse> {
   try {
     const response = await axios.get(`${PORTONE_API_URL}/payment-schedules`, {
       headers: {
@@ -152,13 +169,18 @@ async function getPaymentSchedules(billingKey: string, from: Date, until: Date):
     });
 
     return response.data;
-  } catch (error: any) {
-    throw new Error(`예약된 결제정보 조회 실패: ${error.message}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '알 수 없는 오류';
+    throw new Error(`예약된 결제정보 조회 실패: ${message}`);
   }
 }
 
+interface CancelSchedulesResponse {
+  canceledScheduleIds: string[];
+}
+
 // 포트원 API: 예약 취소
-async function cancelPaymentSchedules(scheduleIds: string[]): Promise<any> {
+async function cancelPaymentSchedules(scheduleIds: string[]): Promise<CancelSchedulesResponse> {
   const response = await fetch(`${PORTONE_API_URL}/payment-schedules`, {
     method: 'DELETE',
     headers: {
@@ -189,7 +211,7 @@ export async function POST(request: NextRequest) {
       step: '1. 요청 데이터 파싱',
       status: 'success',
       message: '요청 데이터를 성공적으로 파싱했습니다.',
-      data: body
+      data: body as unknown as Record<string, unknown>
     });
 
     const { payment_id, status } = body;
@@ -226,11 +248,12 @@ export async function POST(request: NextRequest) {
             billingKey: paymentInfo.billingKey
           }
         });
-      } catch (error: any) {
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '알 수 없는 오류';
         checklist.push({
           step: '3. 결제 정보 조회',
           status: 'failed',
-          message: `결제 정보 조회 실패: ${error.message}`
+          message: `결제 정보 조회 실패: ${message}`
         });
         return NextResponse.json({ success: false, checklist }, { status: 500 });
       }
@@ -252,7 +275,7 @@ export async function POST(request: NextRequest) {
       };
 
       try {
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from('payment')
           .insert([paymentData])
           .select();
@@ -267,11 +290,12 @@ export async function POST(request: NextRequest) {
           message: 'payment 데이터를 성공적으로 저장했습니다.',
           data: paymentData
         });
-      } catch (error: any) {
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '알 수 없는 오류';
         checklist.push({
           step: '4. Supabase payment 테이블 저장',
           status: 'failed',
-          message: `Supabase 저장 실패: ${error.message}`
+          message: `Supabase 저장 실패: ${message}`
         });
         return NextResponse.json({ success: false, checklist }, { status: 500 });
       }
@@ -285,7 +309,7 @@ export async function POST(request: NextRequest) {
         });
       } else {
         try {
-          const scheduleResult = await schedulePayment(
+          await schedulePayment(
             nextScheduleId,
             paymentInfo.billingKey,
             paymentInfo.orderName,
@@ -303,11 +327,12 @@ export async function POST(request: NextRequest) {
               timeToPay: nextScheduleAt.toISOString()
             }
           });
-        } catch (error: any) {
+        } catch (error) {
+          const message = error instanceof Error ? error.message : '알 수 없는 오류';
           checklist.push({
             step: '5. 다음달 구독 예약',
             status: 'failed',
-            message: `구독 예약 실패: ${error.message}`
+            message: `구독 예약 실패: ${message}`
           });
           // 구독 예약 실패는 전체 프로세스 실패로 간주
           return NextResponse.json({ success: false, checklist }, { status: 500 });
@@ -320,7 +345,17 @@ export async function POST(request: NextRequest) {
     // Cancelled 상태 처리
     if (status === 'Cancelled') {
       // 3-1-1. Supabase에서 기존 결제 정보 조회
-      let originalPayment: any;
+      interface OriginalPayment {
+        transaction_key: string;
+        amount: number;
+        start_at: string;
+        end_at: string;
+        end_grace_at: string;
+        next_schedule_at: string;
+        next_schedule_id: string;
+      }
+      
+      let originalPayment: OriginalPayment;
       try {
         const { data, error } = await supabase
           .from('payment')
@@ -337,13 +372,14 @@ export async function POST(request: NextRequest) {
           step: '3. Supabase에서 기존 결제 정보 조회',
           status: 'success',
           message: `기존 결제 정보를 조회했습니다. (transaction_key: ${originalPayment.transaction_key})`,
-          data: originalPayment
+          data: originalPayment as unknown as Record<string, unknown>
         });
-      } catch (error: any) {
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '알 수 없는 오류';
         checklist.push({
           step: '3. Supabase에서 기존 결제 정보 조회',
           status: 'failed',
-          message: `결제 정보 조회 실패: ${error.message}`
+          message: `결제 정보 조회 실패: ${message}`
         });
         return NextResponse.json({ success: false, checklist }, { status: 500 });
       }
@@ -375,11 +411,12 @@ export async function POST(request: NextRequest) {
           message: '취소 정보를 성공적으로 등록했습니다.',
           data: cancelData
         });
-      } catch (error: any) {
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '알 수 없는 오류';
         checklist.push({
           step: '4. Supabase에 취소 정보 등록',
           status: 'failed',
-          message: `취소 정보 등록 실패: ${error.message}`
+          message: `취소 정보 등록 실패: ${message}`
         });
         return NextResponse.json({ success: false, checklist }, { status: 500 });
       }
@@ -397,11 +434,12 @@ export async function POST(request: NextRequest) {
             billingKey: paymentInfo.billingKey
           }
         });
-      } catch (error: any) {
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '알 수 없는 오류';
         checklist.push({
           step: '5. 포트원 결제정보 조회',
           status: 'failed',
-          message: `결제 정보 조회 실패: ${error.message}`
+          message: `결제 정보 조회 실패: ${message}`
         });
         return NextResponse.json({ success: false, checklist }, { status: 500 });
       }
@@ -416,7 +454,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true, checklist }, { status: 200 });
       }
 
-      let scheduleItems: any[];
+      let scheduleItems: PaymentScheduleItem[];
       try {
         // next_schedule_at 기준으로 1일 전후 조회
         const nextScheduleAt = new Date(originalPayment.next_schedule_at);
@@ -442,11 +480,12 @@ export async function POST(request: NextRequest) {
             until: until.toISOString()
           }
         });
-      } catch (error: any) {
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '알 수 없는 오류';
         checklist.push({
           step: '6. 예약된 결제정보 조회',
           status: 'failed',
-          message: `예약 정보 조회 실패: ${error.message}`
+          message: `예약 정보 조회 실패: ${message}`
         });
         return NextResponse.json({ success: false, checklist }, { status: 500 });
       }
@@ -486,11 +525,12 @@ export async function POST(request: NextRequest) {
             canceledScheduleId: targetSchedule.id
           }
         });
-      } catch (error: any) {
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '알 수 없는 오류';
         checklist.push({
           step: '8. 포트원 예약 취소',
           status: 'failed',
-          message: `예약 취소 실패: ${error.message}`
+          message: `예약 취소 실패: ${message}`
         });
         return NextResponse.json({ success: false, checklist }, { status: 500 });
       }
@@ -500,11 +540,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: false, checklist }, { status: 400 });
 
-  } catch (error: any) {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '알 수 없는 오류';
     checklist.push({
       step: '예외 처리',
       status: 'failed',
-      message: `예기치 않은 오류: ${error.message}`
+      message: `예기치 않은 오류: ${message}`
     });
     return NextResponse.json({ success: false, checklist }, { status: 500 });
   }

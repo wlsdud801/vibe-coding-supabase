@@ -1,15 +1,18 @@
 # 포트원 V2 구독 결제 API
 
 ## 개요
+
 포트원 V2를 연동하여 구독 결제 웹훅을 처리하는 API 엔드포인트입니다.
 
 ## API 경로
+
 - **경로**: `/api/portone`
 - **메서드**: `POST`
 
 ## 요청 형식
 
 ### Request Body
+
 ```json
 {
   "payment_id": "string",
@@ -18,6 +21,7 @@
 ```
 
 ### Response
+
 ```json
 {
   "success": boolean,
@@ -37,12 +41,15 @@
 ### 1. Paid 시나리오 (구독 결제 완료)
 
 #### 1-1. 결제 정보 조회
+
 - **API**: `GET https://api.portone.io/payments/{payment_id}`
 - **인증**: `Authorization: PortOne {API_SECRET}`
 - 포트원에서 결제 정보를 조회합니다.
 
 #### 1-2. Supabase payment 테이블 저장
+
 다음 정보를 `payment` 테이블에 저장합니다:
+
 - `transaction_key`: 결제 ID (paymentId)
 - `amount`: 결제 금액 (amount.total)
 - `status`: "Paid"
@@ -53,6 +60,7 @@
 - `next_schedule_id`: 자동 생성된 UUID
 
 #### 1-3. 다음달 구독 예약
+
 - **API**: `POST https://api.portone.io/payments/{next_schedule_id}/schedule`
 - **Body**:
   ```json
@@ -73,6 +81,7 @@
   ```
 
 ### 2. Cancelled 시나리오
+
 현재는 스킵 처리되며, 향후 구현 예정입니다.
 
 ## 환경 변수 설정
@@ -110,6 +119,7 @@ CREATE TABLE payment (
 ## 체크리스트 응답 예시
 
 ### 성공 케이스
+
 ```json
 {
   "success": true,
@@ -170,10 +180,12 @@ CREATE TABLE payment (
 ## 시간대 변환 로직
 
 ### KST → UTC 변환
+
 - 한국 시간(KST)은 UTC+9입니다.
 - 예: KST 2024-01-01 23:59:59 → UTC 2024-01-01 14:59:59
 
 ### 날짜 계산
+
 1. **end_at**: start_at + 30일
 2. **end_grace_at**: end_at + 1일의 23:59:59 (KST) → UTC로 변환
 3. **next_schedule_at**: end_at + 1일의 10:00~10:59 사이 임의 시각 (KST) → UTC로 변환
@@ -183,13 +195,16 @@ CREATE TABLE payment (
 API는 다음과 같은 에러 상황을 처리합니다:
 
 1. **요청 데이터 누락** (400)
+
    - payment_id 또는 status가 누락된 경우
 
 2. **결제 정보 조회 실패** (500)
+
    - 포트원 API 호출 실패
    - 잘못된 payment_id
 
 3. **Supabase 저장 실패** (500)
+
    - 데이터베이스 연결 오류
    - 스키마 불일치
 
@@ -214,5 +229,3 @@ curl -X POST http://localhost:3000/api/portone \
 - 한국 시간(KST)과의 변환이 필요한 경우 자동으로 처리됩니다.
 - 체크리스트 응답을 통해 각 단계의 성공/실패 여부를 확인할 수 있습니다.
 - billingKey가 없는 경우 구독 예약은 스킵됩니다.
-
-
